@@ -1,0 +1,4 @@
+*~
+*.elc
+/hcel-autoloads.el
+/hcel-pkg.el
