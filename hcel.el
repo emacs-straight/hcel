@@ -9,7 +9,7 @@
 ;; Package-Type: multi
 ;; Homepage: https://g.ypei.me/hc.el.git
 
-;; Copyright (C) 2022 Yuchen Pei.
+;; Copyright (C) 2022  Free Software Foundation, Inc.
 ;; 
 ;; This file is part of hcel.
 ;; 
@@ -26,6 +26,9 @@
 ;; You should have received a copy of the GNU Affero General Public
 ;; License along with hcel.  If not, see <https://www.gnu.org/licenses/>.
 
+(require 'hcel-minor)
+(require 'hcel-outline)
+(require 'hcel-results)
 (require 'hcel-source)
 (require 'hcel-utils)
 

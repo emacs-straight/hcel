@@ -1,6 +1,6 @@
 ;;; hcel-utils.el --- Commonly used utilities -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022 Yuchen Pei.
+;; Copyright (C) 2022  Free Software Foundation, Inc.
 ;; 
 ;; This file is part of hcel.
 ;; 
@@ -27,26 +27,6 @@
 (defun hcel-location-tag (location-info)
   "Gets the tag of LOCATION-INFO."
   (alist-get 'tag location-info))
-
-(defun hcel-approx-to-exact-location (approx-location-info)
-  "Fetch exact location given approximate location.
-
-Example of approximate location:
-
-      \"locationInfo\": {
-        \"componentId\": \"exe-haskell-code-server\",
-        \"entity\": \"Typ\",
-        \"haddockAnchorId\": \"PackageInfo\",
-        \"moduleName\": \"HaskellCodeExplorer.Types\",
-        \"name\": \"PackageInfo\",
-        \"packageId\": {
-          \"name\": \"haskell-code-explorer\",
-          \"version\": \"0.1.0.0\"
-        },
-        \"tag\": \"ApproximateLocation\"
-      }"
-  (alist-get 'location
-             (hcel-definition-site-location-info approx-location-info)))
 
 (defun hcel-id-src-span-to-location-info (package-id module-path id-src-span)
   "Converts an idSrcSpan to an exact location.

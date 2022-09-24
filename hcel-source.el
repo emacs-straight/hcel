@@ -1,6 +1,6 @@
 ;;; hcel-source.el --- displays Haskell module source. -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022 Yuchen Pei.
+;; Copyright (C) 2022  Free Software Foundation, Inc.
 ;; 
 ;; This file is part of hcel.
 ;; 
@@ -17,14 +17,18 @@
 ;; You should have received a copy of the GNU Affero General Public
 ;; License along with hcel.  If not, see <https://www.gnu.org/licenses/>.
 
+(require 'array)
+(require 'dom)
 (require 'hcel-client)
+(require 'text-property-search)
+(require 'xref)
 
-(setq-local hcel-identifiers nil)
-(setq-local hcel-declarations nil)
-(setq-local hcel-occurrences nil)
-(setq-local hcel-package-id nil)
-(setq-local hcel-module-path nil)
-(setq-local hcel-highlight-id nil)
+(defvar-local hcel-identifiers nil)
+(defvar-local hcel-declarations nil)
+(defvar-local hcel-occurrences nil)
+(defvar-local hcel-package-id nil)
+(defvar-local hcel-module-path nil)
+(defvar-local hcel-highlight-id nil)
 
 (define-derived-mode hcel-mode special-mode "hcel"
   "Major mode for exploring Haskell codebases"
@@ -66,7 +70,7 @@ When FORCE is non-nil, kill existing source buffer if any."
 (defun hcel-reload-module-source ()
   "Reloads current module source."
   (interactive)
-  (if (equal major-mode 'hcel-mode)
+  (if (derived-mode-p 'hcel-mode)
       (switch-to-buffer
        (hcel-load-module-source hcel-package-id hcel-module-path t))
     (error "Not in hcel-mode!")))
@@ -119,11 +123,8 @@ the location with pulsing.
    (read-buffer
     "Switch to buffer: " nil t
 		(lambda (buffer)
-		  (equal 
-		   (buffer-local-value
-        'major-mode
-        (get-buffer (if (stringp buffer) buffer (car buffer))))
-		   'hcel-mode)))))
+		  (with-current-buffer (if (stringp buffer) buffer (car buffer))
+		    (derived-mode-p 'hcel-mode))))))
 (define-key hcel-mode-map "b" #'hcel-switch-buffer)
 
 (defun hcel-lookup-occurrence-at-point ()
@@ -221,18 +222,9 @@ the location with pulsing.
           (unless (length= expr 0)
             (hcel-expression-and-type (elt expr (1- (length expr))))))))))
 
-(defun hcel-outline-package-module ()
-  (interactive)
-  (let ((package-id hcel-package-id)
-        (module-path hcel-module-path))
-    (hcel)
-    (hcel-outline-goto-package package-id)
-    (hcel-outline-load-modules-at-point)
-    (hcel-outline-goto-module module-path)
-    (hcel-outline-load-identifiers-at-point)))
-(define-key hcel-mode-map "O" #'hcel-outline-package-module)
-
 ;; eldoc
+(defvar hcel-eldoc-hook nil)
+
 (defun hcel-eldoc-id-type (cb)
   (when-let ((symbol (hcel-occ-symbol-at-point))
              (doc (hcel-type-at-point))
@@ -244,63 +236,13 @@ the location with pulsing.
     (funcall cb docstring
              :thing symbol
              :face 'font-lock-variable-name-face)
-    (with-current-buffer eldoc--doc-buffer
-      (hcel-minor-mode))))
-
-(defun hcel-minor-eldoc-id-type (cb)
-  (when-let* ((identifier (hcel-text-property-near-point 'internal-id))
-              (symbol (save-excursion
-                        (buffer-substring
-                         (progn
-                           (text-property-search-backward
-                            'internal-id identifier 'string=)
-                           (point))
-                         (progn
-                           (text-property-search-forward
-                            'internal-id identifier 'string=)
-                           (point)))))
-              (docstring
-               (cond ((eq major-mode 'hcel-outline-mode)
-                      (hcel-render-type-internal
-                       (hcel-text-property-near-point 'package-id)
-                       (hcel-text-property-near-point 'module-path)
-                       identifier))
-                     ((eq major-mode 'hcel-ids-mode)
-                      (hcel-render-type-internal
-                       (alist-get 'packageId (hcel-text-property-near-point 'location-info))
-                       (alist-get 'modulePath (hcel-text-property-near-point 'location-info))
-                       identifier))
-                     (t nil))))
-    (funcall cb docstring
-             :thing symbol
-             :face 'font-lock-variable-name-face)
-    (with-current-buffer eldoc--doc-buffer
-      (hcel-minor-mode))))
+    (run-hooks 'hcel-eldoc-hook)))
 
 (defun hcel-eldoc-docs (cb)
   (when-let ((docstring (hcel-id-docs-at-point)))
     (setq this-command nil)
     (funcall cb docstring)
-    (with-current-buffer eldoc--doc-buffer
-      (hcel-minor-mode))))
-
-(defun hcel-minor-eldoc-docs (cb)
-  (when-let* ((docstring
-               (cond ((eq major-mode 'hcel-outline-mode)
-                      (hcel-id-docs-internal
-                       (hcel-text-property-near-point 'package-id)
-                       (hcel-text-property-near-point 'module-path)
-                       (hcel-text-property-near-point 'internal-id)))
-                     ((eq major-mode 'hcel-ids-mode)
-                      (hcel-id-docs-internal
-                       (alist-get 'packageId (hcel-text-property-near-point 'location-info))
-                       (alist-get 'modulePath (hcel-text-property-near-point 'location-info))
-                       (hcel-text-property-near-point 'internal-id)))
-                     (t nil))))
-    (setq this-command nil)
-    (funcall cb docstring)
-    (with-current-buffer eldoc--doc-buffer
-      (hcel-minor-mode))))
+    (run-hooks 'hcel-eldoc-hook)))
 
 (defun hcel-eldoc-expression-type (cb)
   (when mark-active
@@ -311,8 +253,7 @@ the location with pulsing.
       (funcall cb (cdr expr-and-type)
                :thing (car expr-and-type)
                :face 'font-lock-variable-name-face)
-      (with-current-buffer eldoc--doc-buffer
-        (hcel-minor-mode)))))
+      (run-hooks 'hcel-eldoc-hook))))
 
 ;; highlight
 (defface hcel-highlight-id '((t (:inherit underline)))
@@ -404,7 +345,7 @@ the location with pulsing.
 
 ;; imenu
 (defun hcel-imenu-create-index ()
-  (unless (eq major-mode 'hcel-mode)
+  (unless (derived-mode-p 'hcel-mode)
     (error "Not in hcel-mode!"))
   (mapcar
    (lambda (decl)
@@ -429,24 +370,6 @@ the location with pulsing.
    hcel-package-id hcel-module-path
    (hcel-text-property-near-point 'identifier)
    (hcel-text-property-near-point 'occurrence)))
-
-(defun hcel-minor--xref-backend () 'hcel-minor-xref)
-(cl-defmethod xref-backend-definitions ((_backend (eql hcel-minor-xref)) _identifiers)
-  (hcel-minor-find-definition-at-point))
-(defun hcel-minor-find-definition-at-point ()
-  (interactive)
-  (cond ((or (eq major-mode 'hcel-outline-mode)
-             (eq (current-buffer) eldoc--doc-buffer))
-         (hcel-find-definition-internal
-          (hcel-text-property-near-point 'package-id)
-          (hcel-text-property-near-point 'module-path)
-          (hcel-text-property-near-point 'internal-id)))
-        ((eq major-mode 'hcel-ids-mode)
-         (hcel-find-definition-internal
-          (alist-get 'packageId (hcel-text-property-near-point 'location-info))
-          (alist-get 'modulePath (hcel-text-property-near-point 'location-info))
-          (hcel-text-property-near-point 'internal-id)))
-        (t (error "%S not supported and not in eldoc doc buffer." major-mode))))
 
 (defun hcel-find-definition-internal (package-id module-path identifier
                                                  &optional occurrence)
@@ -484,38 +407,6 @@ the location with pulsing.
                             len))))
                   (t
                    (error "unimplemented: %s" (hcel-location-tag location-info))))))))))
-
-;; hcel-minor mode
-(defvar hcel-minor-major-modes
-  '(hcel-outline-mode hcel-ids-mode)
-  "Major modes where hcel-minor mode can live in.")
-
-(defvar hcel-minor-mode-map
-  (let ((kmap (make-sparse-keymap)))
-    (define-key kmap (kbd "M-?") #'hcel-minor-find-references-at-point)
-    kmap))
-
-(define-minor-mode hcel-minor-mode
-  "A minor mode for exploring haskell codebases."
-  :lighter " hcel-minor"
-  (add-hook 'xref-backend-functions
-            #'hcel-minor--xref-backend nil t)
-  (cond
-   ((null hcel-minor-mode)
-    (remove-hook 'eldoc-documentation-functions #'hcel-minor-eldoc-id-type t)
-    (remove-hook 'eldoc-documentation-functions #'hcel-minor-eldoc-docs t))
-   ((not (or (memq major-mode hcel-minor-major-modes)
-             (eq (current-buffer) eldoc--doc-buffer)))
-    (setq hcel-minor-mode nil)
-    (error "Not in one of the supported modes (%s) or the eldoc buffer."
-           (mapconcat #'prin1-to-string hcel-minor-major-modes
-                      ", ")))
-   (t
-    (add-hook
-     'eldoc-documentation-functions #'hcel-minor-eldoc-docs nil t)
-    (add-hook
-     'eldoc-documentation-functions #'hcel-minor-eldoc-id-type nil t)
-    (setq-local eldoc-documentation-strategy 'eldoc-documentation-compose))))
 
 (provide 'hcel-source)
 ;;; hcel-source.el ends here.

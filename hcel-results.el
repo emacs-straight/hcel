@@ -1,6 +1,6 @@
 ;;; hc-results.el --- Shows query results in a compilation mode -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022 Yuchen Pei.
+;; Copyright (C) 2022  Free Software Foundation, Inc.
 ;; 
 ;; This file is part of hcel.
 ;; 
@@ -75,26 +75,25 @@
 
 (defun hcel-results-next-page ()
   (interactive)
-  ;; FIXME: Using `major-mode' is a code smell.
-  (unless (memq major-mode '(hcel-refs-mode hcel-ids-mode))
+  (unless (derived-mode-p 'hcel-refs-mode 'hcel-ids-mode)
     (error "Not in hcel-refs or hcel-ids mode: %S" major-mode))
   (when (= hcel-results-page-number hcel-results-max-page-number)
     (error "Already on the last page"))
   (setq hcel-results-page-number (1+ hcel-results-page-number))
-  (cond ((eq major-mode 'hcel-refs-mode) (hcel-refs-update-references))
-        ((eq major-mode 'hcel-ids-mode) (hcel-ids-update))
+  (cond ((derived-mode-p 'hcel-refs-mode) (hcel-refs-update-references))
+        ((derived-mode-p 'hcel-ids-mode) (hcel-ids-update))
         (t (error "wrong major mode: %S" major-mode)))
   (hcel-results-next-error-internal 1))
 
 (defun hcel-results-previous-page ()
   (interactive)
-  (unless (memq major-mode '(hcel-refs-mode hcel-ids-mode))
+  (unless (derived-mode-p 'hcel-refs-mode 'hcel-ids-mode)
     (error "Not in hcel-refs or hcel-ids mode: %S" major-mode))
   (when (= hcel-results-page-number 1)
     (error "Already on the first page."))
   (setq hcel-results-page-number (1- hcel-results-page-number))
-  (cond ((eq major-mode 'hcel-refs-mode) (hcel-refs-update-references))
-        ((eq major-mode 'hcel-ids-mode) (hcel-ids-update))
+  (cond ((derived-mode-p 'hcel-refs-mode) (hcel-refs-update-references))
+        ((derived-mode-p 'hcel-ids-mode) (hcel-ids-update))
         (t (error "wrong major mode: %S" major-mode)))
   (goto-char (point-max))
   (hcel-results-next-error-internal -1))
@@ -119,7 +118,7 @@
 
 (defun hcel-refs-update-references ()
   "Find references and update the current hcel-refs-mode buffer."
-  (unless (eq major-mode 'hcel-refs-mode)
+  (unless (derived-mode-p 'hcel-refs-mode)
     (error "Not in hcel-refs mode!"))
   (let ((inhibit-read-only t)
         (modules-refs
@@ -183,7 +182,7 @@
 
 Start by choosing a package."
   (interactive)
-  (unless (eq major-mode 'hcel-refs-mode)
+  (unless (derived-mode-p 'hcel-refs-mode)
     (error "Not in hcel-refs mode!"))
   (let* ((global-refs (hcel-api-global-references hcel-refs-id))
          (name (cadddr (split-string hcel-refs-id "|")))
@@ -212,21 +211,6 @@ Start by choosing a package."
   (hcel-find-references-internal hcel-package-id hcel-module-path
                                  (hcel-text-property-near-point 'identifier)))
 (define-key hcel-mode-map (kbd "M-?") #'hcel-find-references-at-point)
-
-(defun hcel-minor-find-references-at-point ()
-  (interactive)
-  (cond ((or (eq major-mode 'hcel-outline-mode)
-             (eq (current-buffer) eldoc--doc-buffer))
-         (hcel-find-references-internal
-          (hcel-text-property-near-point 'package-id)
-          (hcel-text-property-near-point 'module-path)
-          (hcel-text-property-near-point 'internal-id)))
-        ((eq major-mode 'hcel-ids-mode)
-         (hcel-find-references-internal
-          (alist-get 'packageId (hcel-text-property-near-point 'location-info))
-          (alist-get 'modulePath (hcel-text-property-near-point 'location-info))
-          (hcel-text-property-near-point 'internal-id)))
-        (t (error "%S not supported and not in eldoc doc buffer." major-mode))))
 
 (defun hcel-find-references-internal (package-id module-path identifier)
   (when (and package-id module-path identifier)
@@ -259,11 +243,10 @@ Start by choosing a package."
 
 (define-compilation-mode hcel-ids-mode "hcel-ids"
   "Major mode for showing identifiers"
-  (setq-local next-error-function #'hcel-results-next-error)
-  (hcel-minor-mode 1))
+  (setq-local next-error-function #'hcel-results-next-error))
 
 (defun hcel-ids-update ()
-  (unless (eq major-mode 'hcel-ids-mode)
+  (unless (derived-mode-p 'hcel-ids-mode)
     (error "Not in hcel-ids mode!"))
   (when (and (eq hcel-ids-scope 'package) (not hcel-ids-package-id))
     (error "No package-id supplied for identifiers call!"))
@@ -322,7 +305,7 @@ Start by choosing a package."
 (defun hcel-ids-update-query (query)
   "Search for identities matching query."
   (interactive (list (progn
-                       (unless (eq major-mode 'hcel-ids-mode)
+                       (unless (derived-mode-p 'hcel-ids-mode)
                          (error "Not in hcel-ids mode!"))
                        (read-string "Query: " hcel-ids-query))))
   (setq hcel-ids-query query
@@ -388,7 +371,7 @@ Start by choosing a package."
   (interactive (list
                 (let ((minibuffer-allow-text-properties t)
                       (package-id hcel-package-id))
-                  (unless (eq major-mode 'hcel-mode)
+                  (unless (derived-mode-p 'hcel-mode)
                     (error "Not in hcel-mode!"))
                   (completing-read
                    (format "Search for identifier in %s: "

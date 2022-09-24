@@ -1,6 +1,6 @@
 ;;; hcel-outline.el --- shows package-module-identifier hierarchy in an outline mode -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022 Yuchen Pei.
+;; Copyright (C) 2022  Free Software Foundation, Inc.
 ;; 
 ;; This file is part of hcel.
 ;; 
@@ -20,6 +20,7 @@
 (require 'hcel-utils)
 (require 'hcel-source)
 (require 'outline)
+(require 'text-property-search)
 
 (defvar hcel-outline-buffer-name "*hcel-outline*")
 (defvar hcel-outline-indentation 2)
@@ -42,8 +43,7 @@
   (setq-local outline-regexp "\\( *\\)."
               outline-level (lambda () (1+ (/ (length (match-string 1))
                                               hcel-outline-indentation)))
-              buffer-read-only t)
-  (hcel-minor-mode 1))
+              buffer-read-only t))
 
 (defun hcel ()
   (interactive)
@@ -62,8 +62,21 @@
                     "\n")))
          (hcel-api-packages)))
       (hcel-outline-mode))))
-
 (define-key hcel-mode-map "o" #'hcel)
+
+(defun hcel-outline-package-module ()
+  (interactive)
+  (unless (derived-mode-p 'hcel-mode)
+    (error "Not in hcel mode!"))
+  (let ((package-id hcel-package-id)
+        (module-path hcel-module-path))
+    (hcel)
+    (hcel-outline-goto-package package-id)
+    (hcel-outline-load-modules-at-point)
+    (hcel-outline-goto-module module-path)
+    (hcel-outline-load-identifiers-at-point)))
+(define-key hcel-mode-map "O" #'hcel-outline-package-module)
+
 
 ;; TODO: maybe remove
 (defun hcel-outline-update-opened (package-id module-path)
@@ -207,7 +220,7 @@ update in the outline mode too."
   :lighter " hcel-outline-follow"
   :after-hook
   (if hcel-outline-follow-mode
-      (if (not (eq major-mode 'hcel-outline-mode))
+      (if (not (derived-mode-p 'hcel-outline-mode))
           (error "Not in hcel-outline mode!")
         (add-hook 'post-command-hook
                   #'hcel-outline-open-thing-at-point-other-window nil t))
