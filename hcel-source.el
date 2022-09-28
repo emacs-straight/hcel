@@ -54,8 +54,9 @@ When FORCE is non-nil, kill existing source buffer if any."
         (ignore-errors (kill-buffer buffer-name))
         (with-current-buffer (get-buffer-create buffer-name)
           ;; (hcel-write-source-to-buffer (alist-get 'tokenizedLines json))
-          (hcel-write-html-source-to-buffer (hcel-source-html json))
-          (hcel-fontify-with-haskell-mode)
+          (hcel-write-html-source-to-buffer (hcel-source-html json)
+                                            (alist-get 'occurrences json))
+          ;; (hcel-fontify-with-haskell-mode)
           ;; it is important the setq of local vars are after the (hcel-mode)
           ;; otherwise they may be rewritten
           (hcel-mode)
@@ -147,18 +148,21 @@ the location with pulsing.
 (defun hcel-type-at-point ()
   (interactive)
   (hcel-render-type-internal hcel-package-id hcel-module-path
-                             (hcel-text-property-near-point 'identifier)))
+                             (hcel-text-property-near-point 'identifier)
+                             (hcel-text-property-near-point 'occurrence)))
 
-(defun hcel-render-type-internal (package-id module-path identifier)
-  (when (and package-id module-path identifier)
+(defun hcel-render-type-internal (package-id module-path identifier
+                                             &optional occurrence)
+  (when (and package-id module-path (or identifier occurrence))
     (let ((hcel-buffer (hcel-buffer-name package-id module-path)))
       (when (get-buffer hcel-buffer)
         (with-current-buffer hcel-buffer
-          (when-let* ((id (alist-get (intern identifier)  hcel-identifiers))
-                      (id-type
-                       (or (alist-get 'idType id)
-                           (alist-get 'idOccType
-                                      (hcel-lookup-occurrence-at-point)))))
+          (let* ((id (when identifier
+                       (alist-get (intern identifier) hcel-identifiers)))
+                 (occ (when occurrence
+                        (alist-get (intern occurrence) hcel-occurrences)))
+                 (id-type (or (alist-get 'idType id)
+                              (alist-get 'idOccType occ))))
             (concat
              (hcel-render-id-type id-type)
              (when-let* ((external-id (alist-get 'externalId id))
@@ -256,7 +260,7 @@ the location with pulsing.
       (run-hooks 'hcel-eldoc-hook))))
 
 ;; highlight
-(defface hcel-highlight-id '((t (:inherit underline)))
+(defface hcel-highlight-id-face '((t (:inherit underline)))
   "Face for highlighting hcel identifier at point."
   :group 'hcel-faces)
 
@@ -280,7 +284,7 @@ the location with pulsing.
                      (text-property-search-forward 'identifier id 'string=))
           (font-lock--remove-face-from-text-property
            (prop-match-beginning match)
-           (prop-match-end match) 'face 'hcel-highlight-id))))))
+           (prop-match-end match) 'face 'hcel-highlight-id-face))))))
 
 (defun hcel-highlight-start (id)
   (when id
@@ -291,7 +295,7 @@ the location with pulsing.
                      (text-property-search-forward 'identifier id 'string=))
           (add-face-text-property
            (prop-match-beginning match)
-           (prop-match-end match) 'hcel-highlight-id))))))
+           (prop-match-end match) 'hcel-highlight-id-face))))))
 
 ;; utilities
 (defun hcel-write-source-line-to-buffer (line)
@@ -316,24 +320,51 @@ the location with pulsing.
      (insert "\n"))
    lines))
 
-(defun hcel-write-html-source-line-to-buffer (line)
+(defun hcel-write-html-source-line-to-buffer (line occs)
   (mapc
    (lambda (span)
      (let* ((id (dom-attr span 'data-identifier))
-            (occ (dom-attr span 'data-occurrence))
+            (position (dom-attr span 'data-occurrence))
+            (occ (when position (alist-get (intern position) occs)))
+            (tag (alist-get 'tag (alist-get 'sort occ)))
             (content (dom-text span)))
        (insert
         (propertize content
                     'identifier (unless (string= id "") id)
-                    'occurrence (unless (string= occ "") occ)
+                    'occurrence (unless (string= position "") position)
+                    'face (cond ((equal tag "TypeId") 'hcel-type-face)
+                                ((equal tag "ValueId") 'hcel-value-face)
+                                ((equal tag "ModuleId") 'hcel-type-face)
+                                ((string-match hcel-comment-re content)
+                                 'hcel-comment-face)
+                                ((string-match hcel-pragma-re content)
+                                 'hcel-pragma-face)
+                                (t nil))
                     'cursor-sensor-functions
                     (when id (list #'hcel-highlight-update))))))
    (dom-by-tag line 'span))
   (insert "\n"))
 
-(defun hcel-write-html-source-to-buffer (lines)
+(defface hcel-type-face '((t :inherit font-lock-type-face))
+  "Face used to highlight types" :group 'hcel-faces)
+(defface hcel-value-face '((t :inherit font-lock-variable-name-face))
+  "Face used to highlight values" :group 'hcel-faces)
+(defface hcel-comment-face '((t :inherit font-lock-comment-face))
+  "Face used to highlight comments" :group 'hcel-faces)
+(defface hcel-pragma-face '((t :inherit font-lock-preprocessor-face))
+  "Face used to highlight pragmas" :group 'hcel-faces)
+(defface hcel-builtin-face '((t :inherit font-lock-builtin-face))
+  "Face used to highlight builtins" :group 'hcel-faces)
+
+(defvar hcel-comment-re "^\\ *--.*$")
+(defvar hcel-pragma-re "^\\ *{-# .*? #-}\\ *$")
+(defvar hcel-builtin-re "^\\ *\\(module\\|import\\|qualified\\|as\\|if\\|then\\|else\\|in\\|where\\|::\\)\\ *$")
+
+
+(defun hcel-write-html-source-to-buffer (lines occs)
   (mapc
-   #'hcel-write-html-source-line-to-buffer
+   (lambda (line)
+     (hcel-write-html-source-line-to-buffer line occs))
    lines))
 
 (defun hcel-source-html (json)
@@ -405,8 +436,9 @@ the location with pulsing.
                             "hcel match"
                             (xref-make-buffer-location buffer pos)
                             len))))
-                  (t
-                   (error "unimplemented: %s" (hcel-location-tag location-info))))))))))
+                  ;; FIXME: error when trying to find definition for an empty
+                  ;; string
+                  (t nil))))))))
 
 (provide 'hcel-source)
 ;;; hcel-source.el ends here.
