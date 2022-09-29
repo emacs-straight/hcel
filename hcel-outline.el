@@ -27,8 +27,8 @@
 
 (defvar hcel-outline-mode-map
   (let ((kmap (make-sparse-keymap)))
-    (define-key kmap "n"  #'outline-next-visible-heading)
-    (define-key kmap "p"  #'outline-previous-visible-heading)
+    (define-key kmap "n"  #'next-logical-line)
+    (define-key kmap "p"  #'previous-logical-line)
     (define-key kmap "f"  #'outline-forward-same-level)
     (define-key kmap "F"  #'hcel-outline-follow-mode)
     (define-key kmap "b"  #'outline-backward-same-level)
@@ -140,6 +140,12 @@ update in the outline mode too."
           ((eq thing 'module) (hcel-outline-load-identifiers-at-point))
           (t nil))))
 
+(defun hcel-outline-toggle-exported ()
+  (interactive)
+  (if (memq 'hcel-unexported buffer-invisibility-spec)
+      (remove-from-invisibility-spec 'hcel-unexported)
+    (add-to-invisibility-spec 'hcel-unexported)))
+
 (defun hcel-outline-load-identifiers-at-point ()
   (interactive)
   (unless (eq (get-text-property (point) 'thing) 'module)
@@ -158,7 +164,9 @@ update in the outline mode too."
                   (y-or-n-p "Open module source?"))
           (with-current-buffer
               (hcel-load-module-source package-id module-path)
-            (setq imenu-index (save-excursion (hcel-imenu-create-index))))
+            (setq imenu-index
+                  (save-excursion
+                    (hcel-imenu-create-index))))
           (beginning-of-line 2)
           (mapc
            (lambda (pair)
@@ -170,7 +178,10 @@ update in the outline mode too."
                'thing 'identifier
                'package-id package-id
                'module-path module-path
-               'position (cdr pair))))
+               'position (cdr pair)
+               'invisible (unless
+                              (get-text-property 0 'exported (car pair))
+                            'hcel-unexported))))
            imenu-index))))))
 
 (defun hcel-outline-open-module-source-at-point (&optional other-window)

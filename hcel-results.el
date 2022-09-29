@@ -268,27 +268,39 @@ Start by choosing a package."
                     hcel-results-max-page-number))
     (mapc
      (lambda (result)
-       (let* ((location-info (alist-get 'locationInfo result))
-              (doc (hcel-render-html
-                    (or (alist-get 'doc result)
-                        (alist-get 'documentation
-                                   (ignore-errors
-                                     (hcel-definition-site-location-info
-                                      location-info)))))))
-         (insert "--\n")
-         (insert (propertize
-                  (format "%s :: %s\n"
-                          (alist-get 'demangledOccName result)
-                          (hcel-render-id-type (alist-get 'idType result)))
-                  'location-info location-info
-                  'match-line t))
-         (insert (format "Defined in %s %s\n"
-                         (hcel-format-package-id
-                          (alist-get 'packageId location-info) "-")
-                         (alist-get 'modulePath location-info)))
-         (when doc (insert doc))))
+       (insert "--\n")
+       (insert (hcel-ids-render-result result)))
      (alist-get 'json results))
     (goto-char (point-min))))
+
+(defun hcel-ids-render-result (result)
+  (let* ((location-info (alist-get 'locationInfo result))
+         (doc (hcel-render-html
+               (or (alist-get 'doc result)
+                   (alist-get 'documentation
+                              (ignore-errors
+                                (hcel-definition-site-location-info
+                                 location-info)))))))
+    ;; TODO: remove
+    ;; (print (with-temp-buffer
+    ;;          (insert (alist-get 'doc result))
+    ;;          (libxml-parse-html-region (point-min) (point-max))))
+    (concat
+     (propertize
+      (format "%s :: %s\n"
+              (alist-get 'demangledOccName result)
+              (hcel-render-id-type (alist-get 'idType result)))
+      'location-info location-info
+      'match-line t)
+     (concat "Defined in "
+             (button-buttonize
+              (format "%s %s"
+                      (hcel-format-package-id
+                       (alist-get 'packageId location-info) "-")
+                      (alist-get 'modulePath location-info))
+              (lambda (&rest _) (hcel-load-module-location-info location-info)))
+             "\n")
+     (when doc (concat "\n" doc)))))
 
 (defun hcel-ids-reload ()
   (interactive)
@@ -319,45 +331,87 @@ Start by choosing a package."
 ;; Caching results to prevent to many hits
 (defvar hcel-ids--minibuffer-saved-query nil)
 (defvar hcel-ids--minibuffer-saved-results nil)
+(defvar hcel-ids--minibuffer-selected nil)
 
-(defun hcel-ids-minibuffer-collection (scope query &optional package-id)
+(defun hcel-ids--affixation-internal (scope items)
+  (let ((results
+         (mapcar
+          (lambda (item)
+            (let* ((info (get-text-property 0 'info item))
+                   (location-info (alist-get 'locationInfo info))
+                   (suffix
+                    (propertize 
+                     (format
+                      " :: %s"
+                      (hcel-render-components
+                       (alist-get 'components (alist-get 'idType info))))
+                     'face 'completions-annotations))
+                   (prefix
+                    (propertize
+                     (if (eq scope 'global)
+                         (format "(%s %s) "
+                                 (alist-get 'moduleName location-info)
+                                 (hcel-format-package-id
+                                  (alist-get 'packageId location-info) "-"))
+                       (format "(%s) "
+                               (alist-get 'moduleName location-info)))
+                     'face 'completions-annotations)))
+              (list (car (split-string item " ")) prefix suffix)))
+          items)))
+    (setq hcel-ids--minibuffer-selected (car (car results)))
+    results))
+
+(defun hcel-ids--affixation-function (scope)
+  (lambda (items)
+    (hcel-ids--affixation-internal scope items)))
+
+(defun hcel-ids-minibuffer-collection (scope query action &optional package-id)
   (when (and (eq scope 'package) (not package-id))
     (error "No package-id supplied for identifiers call!"))
-  (unless (length= query 0)
-    (if (string= hcel-ids--minibuffer-saved-query query)
-        hcel-ids--minibuffer-saved-results
-      (setq hcel-ids--minibuffer-saved-query query
-            hcel-ids--minibuffer-saved-results
-            (mapcar
-             (lambda (result)
-               (propertize
-                (alist-get 'demangledOccName result)
-                'location-info (alist-get 'locationInfo result)))
-             (hcel-api-identifiers
-              scope query package-id nil
-              (number-to-string hcel-ids-live-per-page))))
-      hcel-ids--minibuffer-saved-results)))
+  (if (eq action 'metadata)
+      (list 'metadata (cons 'affixation-function
+                            (hcel-ids--affixation-function scope)))
+    (unless (length= query 0)
+      (if (string= hcel-ids--minibuffer-saved-query query)
+          hcel-ids--minibuffer-saved-results
+        (setq hcel-ids--minibuffer-saved-query query
+              hcel-ids--minibuffer-saved-results
+              (mapcar
+               (lambda (result)
+                 (propertize
+                  (format "%s %s"
+                          (alist-get 'demangledOccName result)
+                          (alist-get 'externalId result))
+                  'info result
+                  'location-info (alist-get 'locationInfo result)
+                  'components (alist-get 'components
+                                         (alist-get 'idType result))))
+               (hcel-api-identifiers
+                scope query package-id nil
+                (number-to-string hcel-ids-live-per-page))))
+        hcel-ids--minibuffer-saved-results))))
 
-(defun hcel-global-ids-minibuffer-collection (query &rest _)
-  (hcel-ids-minibuffer-collection 'global query))
+(defun hcel-global-ids-minibuffer-collection (query pred action)
+  (hcel-ids-minibuffer-collection 'global query action))
 
 (defun hcel-package-ids-minibuffer-collection (package-id)
-  (lambda (query &rest _)
-    (hcel-ids-minibuffer-collection 'package query package-id)))
+  (lambda (query pred action)
+    (hcel-ids-minibuffer-collection 'package query action package-id)))
 
 (defun hcel-ids (scope query &optional package-id)
-  (if (length= hcel-ids--minibuffer-saved-results 1)
-      (hcel-load-module-location-info
-       (with-temp-buffer
-         (insert (car hcel-ids--minibuffer-saved-results))
-         (get-text-property (point-min) 'location-info)))
-    (let ((buffer-name (hcel-ids-buffer-name scope query)))
-      (with-current-buffer (get-buffer-create buffer-name)
-        (hcel-ids-mode)
-        (setq hcel-ids-scope scope
-              hcel-ids-package-id package-id)
-        (hcel-ids-update-query query))
-      (switch-to-buffer buffer-name))))
+  ;; FIXME: hacky way to detecting completion.
+  (let ((splitted (split-string query " ")))
+    (if (length= splitted 2)
+        (hcel-load-module-location-info
+         (alist-get 'locationInfo
+                    (get-text-property 0 'info hcel-ids--minibuffer-selected)))
+      (let ((buffer-name (hcel-ids-buffer-name scope query)))
+        (with-current-buffer (get-buffer-create buffer-name)
+          (hcel-ids-mode)
+          (setq hcel-ids-scope scope
+                hcel-ids-package-id package-id)
+          (hcel-ids-update-query (car splitted)))
+        (switch-to-buffer buffer-name)))))
 
 (defun hcel-global-ids (query)
   (interactive (list
@@ -379,6 +433,18 @@ Start by choosing a package."
                    (hcel-package-ids-minibuffer-collection package-id)))))
   (hcel-ids 'package query hcel-package-id))
 (define-key hcel-mode-map "i" #'hcel-package-ids)
+
+(defun hcel-help (query)
+  (interactive
+   (list
+    (let ((minibuffer-allow-text-properties t))
+      (completing-read "Find help for identifier: "
+                       #'hcel-global-ids-minibuffer-collection))))
+  (when (length= (split-string query " ") 2)
+    (with-help-window "*hcel-help*"
+      (with-current-buffer standard-output
+        (insert (hcel-ids-render-result
+                (get-text-property 0 'info hcel-ids--minibuffer-selected)))))))
 
 (provide 'hcel-results)
 ;;; hcel-results.el ends here.

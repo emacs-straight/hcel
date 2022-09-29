@@ -68,6 +68,16 @@
               (name (alist-get 'name approx-location-info)))
     (hcel-api-definition-site package-id component-id module-name entity name)))
 
+(defun hcel-definition-site-external-id (external-id)
+  "Call definitionSite using external id."
+  (let* ((splitted (split-string external-id "|"))
+         (package-id (hcel-parse-package-id (car splitted) "-"))
+         (module-name (cadr splitted))
+         (entity (caddr splitted))
+         (name (cadddr splitted)))
+    (hcel-api-definition-site
+     package-id "lib" module-name entity name)))
+
 (defun hcel-approx-to-exact-location (approx-location-info)
   "Fetch exact location given approximate location.
 
