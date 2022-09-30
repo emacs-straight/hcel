@@ -24,6 +24,23 @@
 (require 'json)
 (require 'xref)
 
+(defcustom hcel-font-lock-use-haskell-mode nil
+  "If non-nil, will use haskell mode for haskell syntax highlight."
+  :group 'hcel :type '(boolean))
+
+
+(defface hcel-type-face '((t :inherit font-lock-type-face))
+  "Face used to highlight types" :group 'hcel-faces)
+(defface hcel-value-face '((t :inherit font-lock-variable-name-face))
+  "Face used to highlight values" :group 'hcel-faces)
+(defface hcel-comment-face '((t :inherit font-lock-comment-face))
+  "Face used to highlight comments" :group 'hcel-faces)
+(defface hcel-pragma-face '((t :inherit font-lock-preprocessor-face))
+  "Face used to highlight pragmas" :group 'hcel-faces)
+
+(defvar hcel-comment-re "^\\ *--.*$")
+(defvar hcel-pragma-re "^\\ *{-# .*? #-}\\ *$")
+
 (defvar-local hcel-identifiers nil)
 (defvar-local hcel-package-id nil)
 (defvar-local hcel-module-path nil)
@@ -54,9 +71,11 @@ When FORCE is non-nil, kill existing source buffer if any."
         (with-current-buffer (get-buffer-create buffer-name)
           ;; (hcel-write-source-to-buffer (alist-get 'tokenizedLines json))
           (hcel-write-html-source-to-buffer (hcel-source-html json)
-                                            (alist-get 'occurrences json))
+                                            (alist-get 'occurrences json)
+                                            (not hcel-font-lock-use-haskell-mode))
           (hcel-annotate-declarations (alist-get 'declarations json))
-          ;; (hcel-fontify-with-haskell-mode)
+          (when hcel-font-lock-use-haskell-mode
+            (hcel-fontify-with-haskell-mode))
           ;; it is important the setq of local vars are after the (hcel-mode)
           ;; otherwise they may be rewritten
           (hcel-mode)
@@ -196,7 +215,7 @@ the location with pulsing.
                              (ignore-errors
                                (hcel-hoogle-docs-location-info location-info))))
                    (when (length> hoogle-docs 0) (concat "Hoogle: " hoogle-docs))))))
-            (hcel-render-html docs)))))))
+            (hcel-render-html docs 'hcel-tag-span-button-load-source)))))))
 
 ;; TODO: multiple expressions
 (defun hcel-expressions-type (beg end)
@@ -252,7 +271,7 @@ the location with pulsing.
       (run-hooks 'hcel-eldoc-hook))))
 
 ;; highlight
-(defface hcel-highlight-id-face '((t (:inherit underline)))
+(defface hcel-highlight-id-face '((t (:inherit highlight)))
   "Face for highlighting hcel identifier at point."
   :group 'hcel-faces)
 
@@ -290,7 +309,7 @@ the location with pulsing.
            (prop-match-end match) 'hcel-highlight-id-face))))))
 
 ;; utilities
-(defun hcel-write-html-source-line-to-buffer (line occs)
+(defun hcel-write-html-source-line-to-buffer (line occs font-lock)
   (mapc
    (lambda (span)
      (let* ((id (dom-attr span 'data-identifier))
@@ -307,14 +326,15 @@ the location with pulsing.
                     'span-end (when splitted
                                 (1- (string-to-number (caddr splitted))))
                     'occurrence occ
-                    'face (cond ((equal tag "TypeId") 'hcel-type-face)
-                                ((equal tag "ValueId") 'hcel-value-face)
-                                ((equal tag "ModuleId") 'hcel-type-face)
-                                ((string-match hcel-comment-re content)
-                                 'hcel-comment-face)
-                                ((string-match hcel-pragma-re content)
-                                 'hcel-pragma-face)
-                                (t nil))
+                    'font-lock-face (when font-lock
+                            (cond ((equal tag "TypeId") 'hcel-type-face)
+                                  ((equal tag "ValueId") 'hcel-value-face)
+                                  ((equal tag "ModuleId") 'hcel-type-face)
+                                  ((string-match hcel-comment-re content)
+                                   'hcel-comment-face)
+                                  ((string-match hcel-pragma-re content)
+                                   'hcel-pragma-face)
+                                  (t nil)))
                     'cursor-sensor-functions
                     (when id (list #'hcel-highlight-update))))))
    (dom-by-tag line 'span))
@@ -343,26 +363,10 @@ the location with pulsing.
   (left-char))
 (define-key hcel-mode-map "p" #'hcel-source-previous-declaration)
 
-(defface hcel-type-face '((t :inherit font-lock-type-face))
-  "Face used to highlight types" :group 'hcel-faces)
-(defface hcel-value-face '((t :inherit font-lock-variable-name-face))
-  "Face used to highlight values" :group 'hcel-faces)
-(defface hcel-comment-face '((t :inherit font-lock-comment-face))
-  "Face used to highlight comments" :group 'hcel-faces)
-(defface hcel-pragma-face '((t :inherit font-lock-preprocessor-face))
-  "Face used to highlight pragmas" :group 'hcel-faces)
-(defface hcel-builtin-face '((t :inherit font-lock-builtin-face))
-  "Face used to highlight builtins" :group 'hcel-faces)
-
-(defvar hcel-comment-re "^\\ *--.*$")
-(defvar hcel-pragma-re "^\\ *{-# .*? #-}\\ *$")
-(defvar hcel-builtin-re "^\\ *\\(module\\|import\\|qualified\\|as\\|if\\|then\\|else\\|in\\|where\\|::\\)\\ *$")
-
-
-(defun hcel-write-html-source-to-buffer (lines occs)
+(defun hcel-write-html-source-to-buffer (lines occs font-lock)
   (mapc
    (lambda (line)
-     (hcel-write-html-source-line-to-buffer line occs))
+     (hcel-write-html-source-line-to-buffer line occs font-lock))
    lines))
 
 (defun hcel-source-html (json)
@@ -371,6 +375,11 @@ the location with pulsing.
     (dom-by-class
      (libxml-parse-html-region (point-min) (point-max))
      "line-content")))
+
+(defun hcel-tag-span-button-load-source (marker)
+  (hcel-load-module-location-info
+   (hcel-to-exact-location
+    (get-text-property marker 'location-info))))
 
 ;; imenu
 (defun hcel-imenu-create-index ()
@@ -421,8 +430,7 @@ the location with pulsing.
                 (when identifier
                   (alist-get (intern identifier) hcel-identifiers))
                 occurrence)))
-          (when (string= (hcel-location-tag location-info) "ApproximateLocation")
-            (setq location-info (hcel-approx-to-exact-location location-info)))
+          (setq location-info (hcel-to-exact-location location-info))
           (let ((line-beg (alist-get 'startLine location-info))
                 (col-beg (alist-get 'startColumn location-info))
                 (line-end (alist-get 'endLine location-info))

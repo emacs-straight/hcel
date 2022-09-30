@@ -70,7 +70,7 @@
 (defun hcel-minor-eldoc-id-type (cb)
   (when-let* ((identifier (hcel-text-property-near-point 'internal-id))
               (symbol (save-excursion
-                        (buffer-substring
+                        (buffer-substring-no-properties
                          (progn
                            (text-property-search-backward
                             'internal-id identifier 'string=)

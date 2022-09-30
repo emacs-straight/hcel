@@ -59,8 +59,9 @@
 
 (defun hcel-definition-site-location-info (approx-location-info)
   "Call definitionSite with info from an approximate location."
-  (when (string= (hcel-location-tag approx-location-info) "ExactLocation")
-    (error "An ExactLocation supplied."))
+  (when (not (equal (hcel-location-tag approx-location-info)
+                    "ApproximateLocation"))
+    (error "An non ApproximateLocation supplied: %S" approx-location-info))
   (when-let* ((package-id (alist-get 'packageId approx-location-info))
               (component-id (alist-get 'componentId approx-location-info))
               (module-name (alist-get 'moduleName approx-location-info))
@@ -78,8 +79,12 @@
     (hcel-api-definition-site
      package-id "lib" module-name entity name)))
 
-(defun hcel-approx-to-exact-location (approx-location-info)
-  "Fetch exact location given approximate location.
+(defun hcel-to-exact-location (location-info)
+  "Returns exact location given location info.
+
+If LOCATION-INFO is approximate, then fetches exact location info
+using the supplied approximate location-info.  Otherwise returns
+LOCATION-INFO.
 
 Example of approximate location:
 
@@ -95,8 +100,10 @@ Example of approximate location:
         },
         \"tag\": \"ApproximateLocation\"
       }"
-  (alist-get 'location
-             (hcel-definition-site-location-info approx-location-info)))
+  (if (equal (hcel-location-tag location-info) "ApproximateLocation")
+      (alist-get 'location
+               (hcel-definition-site-location-info location-info))
+    location-info))
 
 (defun hcel-api-module-info (package-id module-path)
   (hcel-url-fetch-json

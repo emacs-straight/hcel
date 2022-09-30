@@ -17,6 +17,9 @@
 ;; You should have received a copy of the GNU Affero General Public
 ;; License along with hcel.  If not, see <https://www.gnu.org/licenses/>.
 
+(require 'dom)
+(require 'shr)
+
 ;; data conversions
 (defun hcel-parse-package-id (package-id &optional divider)
   (unless (stringp divider) (setq divider " "))
@@ -111,20 +114,25 @@ Example of an idSrcSpan:
   (unless (stringp divider) (setq divider " "))
   (concat (alist-get 'name package) divider (alist-get 'version package)))
 
-(defun hcel-render-components (components &optional name)
+(defun hcel-render-components (components &optional name comp-max-len)
   (when (or components name)
     (concat (when name (replace-regexp-in-string "\n" " " name))
             (when components
-              (concat (when name " :: ")
-                      (replace-regexp-in-string
-                       "\n" " " (mapconcat
-                                 (lambda (component)
-                                   (propertize
-                                    (or (alist-get 'name component)
-                                        (alist-get 'contents component))
-                                    'internal-id (alist-get 'internalId component)))
-                                 components
-                                 "")))))))
+              (let ((rendered-comp
+                     (concat (when name " :: ")
+                             (substring
+                              (replace-regexp-in-string
+                               "\n" " " (mapconcat
+                                         (lambda (component)
+                                           (propertize
+                                            (or (alist-get 'name component)
+                                                (alist-get 'contents component))
+                                            'internal-id (alist-get 'internalId component)))
+                                         components
+                                         ""))))))
+                (if (and comp-max-len (< comp-max-len (length rendered-comp)))
+                    (concat (substring rendered-comp 0 comp-max-len) "...")
+                  rendered-comp))))))
 
 (defun hcel-render-id-type (id-type)
   (concat
@@ -140,17 +148,48 @@ Example of an idSrcSpan:
                     (alist-get 'exprType (alist-get 'info expr)))))
     (cons expression type)))
 
-(defun hcel-render-html (html)
+(defun hcel-render-html (html action)
+  (unless action (setq action 'hcel-tag-span-button-load-source))
   (when html
+    ;; (hcel-debug-html html)
     (with-temp-buffer
       (insert html)
-      (shr-render-region (point-min) (point-max))
+      (let* ((hcel-tag-span (hcel-tag-span-function action))
+             (shr-external-rendering-functions
+              `((span . ,hcel-tag-span)
+                (div . hcel-tag-div))))
+        (shr-render-region (point-min) (point-max)))
       (buffer-string))))
+
+(defun hcel-debug-html (html)
+  (with-temp-buffer
+    (insert html)
+    (pp (libxml-parse-html-region (point-min) (point-max)))))
+
+(defun hcel-tag-span-function (button-action)
+  (lambda (dom)
+    (let ((start (point)))
+      (shr-tag-span dom)
+      (mapc (lambda (attr)
+              (cond ((eq (car attr) 'data-location)
+                     (put-text-property start (point)
+                                        'location-info
+                                        (json-read-from-string (cdr attr)))
+                     (make-text-button start (point)
+                                       'action button-action
+                                       'face 'button)
+                     )))
+            (dom-attributes dom)))))
+
+(defun hcel-tag-div (dom)
+  (if (equal (dom-attr dom 'class) "source-code")
+      (shr-tag-pre dom)
+    (shr-tag-div dom)))
 
 (defun hcel-text-property-near-point (prop)
   "Find property prop at point, or just before point."
   (or (get-text-property (point) prop)
-      (get-text-property (max 1 (1- (point))) prop)))
+      (get-text-property (max (point-min) (1- (point))) prop)))
 
 (provide 'hcel-utils)
 ;;; hcel-utils.el ends here.
