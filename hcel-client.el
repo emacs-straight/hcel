@@ -19,7 +19,7 @@
 
 (require 'hcel-utils)
 (require 'json)
-(defcustom hcel-host "localhost:8080"
+(defcustom hcel-host "http://localhost:8080"
   "hcel server host"
   :group 'hcel :type '(string))
 (defcustom hcel-indexed-dir "/.haskell-code-explorer"
