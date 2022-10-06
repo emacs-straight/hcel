@@ -27,6 +27,29 @@
   :group 'hcel :type '(string))
 
 (defvar hcel-client-buffer-name "*hcel-client*")
+(defvar hcel-server-version "0.1.0.0"
+  "The version of hcel the server we are talking to.")
+
+(defun hcel-fetch-server-version ()
+  (interactive)
+  (setq hcel-server-version
+        (condition-case nil
+            (hcel-url-fetch-json
+             (concat hcel-host "/api/greet"))
+          (error "0.1.0.0"))))
+
+(hcel-fetch-server-version)
+
+(defun hcel-require-server-version (lower-bound higher-bound)
+  (unless (and (or (not lower-bound)
+                   (string< lower-bound hcel-server-version)
+                   (equal lower-bound hcel-server-version))
+               (or (not higher-bound)
+                   (string> higher-bound hcel-server-version)
+                   (equal higher-bound hcel-server-version)))
+    (error
+     "Server version cannot be satisfied.  Actual version: %s.  Required version: lower bound - %s, higher bound - %s"
+     hcel-server-version lower-bound higher-bound)))
 
 (defun hcel-api-packages ()
   (let ((packages
@@ -158,6 +181,46 @@ Example of approximate location:
            query
            (hcel-format-pagination-query page per-page))
    nil with-header))
+
+(defun hcel-api-global-identifier-a (package-id component-id module-name entity
+                                            name)
+  (hcel-require-server-version "1.0.0" nil)
+  (hcel-url-fetch-json
+   (concat hcel-host "/api/globalIdentifierA/"
+           (hcel-format-package-id package-id "-") "/" component-id "/"
+           module-name "/" entity "/" name)))
+
+(defun hcel-api-global-identifier-e (package-id module-path start-line start-column
+                                                end-line end-column name)
+  (hcel-require-server-version "1.0.0" nil)
+  (hcel-url-fetch-json
+   (concat hcel-host "/api/globalIdentifierE/"
+           (hcel-format-package-id package-id "-") "/"
+           (replace-regexp-in-string "/" "%2F" module-path) "/"
+           (number-to-string start-line) "/"
+           (number-to-string start-column) "/"
+           (number-to-string end-line) "/"
+           (number-to-string end-column) "/" name)))
+
+(defun hcel-global-identifier (location-info &optional name)
+  (let ((tag (hcel-location-tag location-info)))
+    (cond ((equal tag "ApproximateLocation")
+           (hcel-api-global-identifier-a
+            (alist-get 'packageId location-info)
+            (alist-get 'componentId location-info)
+            (alist-get 'moduleName location-info)
+            (alist-get 'entity location-info)
+            (alist-get 'name location-info)))
+          ((equal tag "ExactLocation")
+           (hcel-api-global-identifier-e
+            (alist-get 'packageId location-info)
+            (alist-get 'modulePath location-info)
+            (alist-get 'startLine location-info)
+            (alist-get 'startColumn location-info)
+            (alist-get 'endLine location-info)
+            (alist-get 'endColumn location-info)
+            name))
+          (t (error "Location info %S not supported." location-info)))))
 
 (defun hcel-api-global-references (name)
   (hcel-url-fetch-json (concat hcel-host "/api/globalReferences/" name)))

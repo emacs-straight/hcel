@@ -68,28 +68,28 @@
         (t (error "%S not supported and not in eldoc doc buffer." major-mode))))
 
 (defun hcel-minor-eldoc-id-type (cb)
-  (when-let* ((identifier (hcel-text-property-near-point 'internal-id))
+  (when-let* ((internal-id (hcel-text-property-near-point 'internal-id))
               (symbol (save-excursion
                         (buffer-substring-no-properties
                          (progn
                            (text-property-search-backward
-                            'internal-id identifier 'string=)
+                            'internal-id internal-id 'equal)
                            (point))
                          (progn
                            (text-property-search-forward
-                            'internal-id identifier 'string=)
+                            'internal-id internal-id 'equal)
                            (point)))))
               (docstring
                (cond ((derived-mode-p 'hcel-outline-mode)
                       (hcel-render-type-internal
                        (hcel-text-property-near-point 'package-id)
                        (hcel-text-property-near-point 'module-path)
-                       identifier))
+                       internal-id))
                      ((derived-mode-p 'hcel-ids-mode)
                       (hcel-render-type-internal
                        (alist-get 'packageId (hcel-text-property-near-point 'location-info))
                        (alist-get 'modulePath (hcel-text-property-near-point 'location-info))
-                       identifier))
+                       internal-id))
                      (t nil))))
     (funcall cb docstring
              :thing symbol

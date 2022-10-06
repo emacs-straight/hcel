@@ -145,10 +145,10 @@ the location with pulsing.
 		    (derived-mode-p 'hcel-mode))))))
 (define-key hcel-mode-map "b" #'hcel-switch-buffer)
 
-(defun hcel-get-location-info (id occ)
-  (or (when id (alist-get 'locationInfo id))
+(defun hcel-get-location-info (identifier occurrence)
+  (or (when identifier (alist-get 'locationInfo identifier))
       ;; happens for import modules
-      (when occ (alist-get 'contents (alist-get 'sort occ)))))
+      (when occurrence (alist-get 'contents (alist-get 'sort occurrence)))))
 
 (defun hcel-occ-symbol-at-point ()
   (when-let* ((col-beg (hcel-text-property-near-point 'span-begin))
@@ -161,22 +161,22 @@ the location with pulsing.
 (defun hcel-type-at-point ()
   (interactive)
   (hcel-render-type-internal hcel-package-id hcel-module-path
-                             (hcel-text-property-near-point 'identifier)
+                             (hcel-text-property-near-point 'internal-id)
                              (hcel-text-property-near-point 'occurrence)))
 
-(defun hcel-render-type-internal (package-id module-path identifier
+(defun hcel-render-type-internal (package-id module-path internal-id
                                              &optional occurrence)
-  (when (and package-id module-path (or identifier occurrence))
+  (when (and package-id module-path (or internal-id occurrence))
     (let ((hcel-buffer (hcel-buffer-name package-id module-path)))
       (when (get-buffer hcel-buffer)
         (with-current-buffer hcel-buffer
-          (let* ((id (when identifier
-                       (alist-get (intern identifier) hcel-identifiers)))
-                 (id-type (or (alist-get 'idType id)
+          (let* ((identifier (when internal-id
+                       (alist-get (intern internal-id) hcel-identifiers)))
+                 (id-type (or (alist-get 'idType identifier)
                               (alist-get 'idOccType occurrence))))
             (concat
              (hcel-render-id-type id-type)
-             (when-let* ((external-id (alist-get 'externalId id))
+             (when-let* ((external-id (alist-get 'externalId identifier))
                          (splitted (split-string external-id "|"))
                          (package-id (car splitted))
                          (module-name (cadr splitted)))
@@ -191,20 +191,20 @@ the location with pulsing.
 
 (defun hcel-id-docs-at-point ()
   (hcel-id-docs-internal hcel-package-id hcel-module-path
-                         (hcel-text-property-near-point 'identifier)))
+                         (hcel-text-property-near-point 'internal-id)))
 
-(defun hcel-id-docs-internal (package-id module-path identifier)
-  (when (and package-id module-path identifier)
+(defun hcel-id-docs-internal (package-id module-path internal-id)
+  (when (and package-id module-path internal-id)
     (let ((hcel-buffer (hcel-buffer-name package-id module-path)))
       (when (get-buffer hcel-buffer)
         (with-current-buffer hcel-buffer
           (when-let*
-              ((id (alist-get (intern identifier) hcel-identifiers))
-               (location-info (hcel-get-location-info id nil))
+              ((identifier (alist-get (intern internal-id) hcel-identifiers))
+               (location-info (hcel-get-location-info identifier nil))
                (docs
                 (or
                  ;; same module
-                 (alist-get 'doc id)
+                 (alist-get 'doc identifier)
                  ;; other module
                  (alist-get
                   'documentation
@@ -279,7 +279,7 @@ the location with pulsing.
   ;; if mark is active, change of face will deactivate the mark in transient
   ;; mark mode
   (unless mark-active
-    (let ((id (get-text-property (point) 'identifier))
+    (let ((id (get-text-property (point) 'internal-id))
           (inhibit-read-only t))
       (when (not (string= hcel-highlight-id id))
         (hcel-highlight-stop hcel-highlight-id)
@@ -292,7 +292,7 @@ the location with pulsing.
       (goto-char (point-min))
       (let ((match))
         (while (setq match
-                     (text-property-search-forward 'identifier id 'string=))
+                     (text-property-search-forward 'internal-id id 'string=))
           (font-lock--remove-face-from-text-property
            (prop-match-beginning match)
            (prop-match-end match) 'face 'hcel-highlight-id-face))))))
@@ -303,7 +303,7 @@ the location with pulsing.
       (goto-char (point-min))
       (let ((match))
         (while (setq match
-                     (text-property-search-forward 'identifier id 'string=))
+                     (text-property-search-forward 'internal-id id 'string=))
           (add-face-text-property
            (prop-match-beginning match)
            (prop-match-end match) 'hcel-highlight-id-face))))))
@@ -320,7 +320,7 @@ the location with pulsing.
             (content (dom-text span)))
        (insert
         (propertize content
-                    'identifier (unless (string= id "") id)
+                    'internal-id (unless (string= id "") id)
                     'span-begin (when splitted
                                   (1- (string-to-number (cadr splitted))))
                     'span-end (when splitted
@@ -413,12 +413,12 @@ the location with pulsing.
 (defun hcel-find-definition ()
   (hcel-find-definition-internal
    hcel-package-id hcel-module-path
-   (hcel-text-property-near-point 'identifier)
+   (hcel-text-property-near-point 'internal-id)
    (hcel-text-property-near-point 'occurrence)))
 
-(defun hcel-find-definition-internal (package-id module-path identifier
+(defun hcel-find-definition-internal (package-id module-path internal-id
                                                  &optional occurrence)
-  (when (and package-id module-path (or identifier occurrence))
+  (when (and package-id module-path (or internal-id occurrence))
     (let ((hcel-buffer (hcel-buffer-name package-id module-path)))
       (when (or (get-buffer hcel-buffer)
                 (and (y-or-n-p "Open module source?")
@@ -427,8 +427,8 @@ the location with pulsing.
       (with-current-buffer hcel-buffer
         (let ((location-info
                (hcel-get-location-info
-                (when identifier
-                  (alist-get (intern identifier) hcel-identifiers))
+                (when internal-id
+                  (alist-get (intern internal-id) hcel-identifiers))
                 occurrence)))
           (setq location-info (hcel-to-exact-location location-info))
           (let ((line-beg (alist-get 'startLine location-info))

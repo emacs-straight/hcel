@@ -60,7 +60,6 @@ There are several entry points:
 
 Most of these TODOs likely require changes to the server program.
 
-- Navigation between identifiers within the help buffer.
 - Awareness of all modules exporting an identifier (like hoogle)
 - Requesting server to index a new package, or re-index an updated
   one.

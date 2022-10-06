@@ -58,14 +58,15 @@ is in ghc-8.10.1, hcel will attempt to look up in ghc-9.2.2.org."
 
 (defun hcel-identifier-at-point-to-haddorg ()
   (interactive)
-  (when-let* ((identifier (hcel-text-property-near-point 'identifier))
-              (id (alist-get (intern identifier) hcel-identifiers))
-              (exported (alist-get 'isExported id))
-              (external-id (alist-get 'externalId id)))
+  (when-let* ((internal-id (hcel-text-property-near-point 'internal-id))
+              (identifier (alist-get (intern internal-id) hcel-identifiers))
+              (exported (alist-get 'isExported identifier))
+              (external-id (alist-get 'externalId identifier)))
     (if (and (eq exported json-false)
              ;; FIXME: Hacky.  ExactLocation implies identifier is declared in
              ;; the current module.
-             (equal (alist-get 'tag (alist-get 'locationInfo id)) "ExactLocation"))
+             (equal (alist-get 'tag (alist-get 'locationInfo identifier))
+                    "ExactLocation"))
         (message "%s is not exported." (hcel-occ-symbol-at-point))
       (let* ((splitted (split-string external-id "|"))
              (package-id (car splitted))

@@ -103,7 +103,8 @@
   "hcel refs number of results per page."
   :group 'hcel-refs :type '(natnum))
 
-(defvar-local hcel-refs-id nil)
+(defvar-local hcel-refs-id nil
+  "External ID of the identifier we are looking for refs in the current buffer")
 (defvar-local hcel-refs-package-id nil)
 
 (define-compilation-mode hcel-refs-mode "hcel-refs"
@@ -209,24 +210,25 @@ Start by choosing a package."
   "Find references of the identifier at point."
   (interactive)
   (hcel-find-references-internal hcel-package-id hcel-module-path
-                                 (hcel-text-property-near-point 'identifier)))
+                                 (hcel-text-property-near-point 'internal-id)))
 (define-key hcel-mode-map (kbd "M-?") #'hcel-find-references-at-point)
 
-(defun hcel-find-references-internal (package-id module-path identifier)
-  (when (and package-id module-path identifier)
+(defun hcel-find-references-internal (package-id module-path internal-id)
+  (when (and package-id module-path internal-id)
     (let ((hcel-buffer (hcel-buffer-name package-id module-path)))
       (when (or (get-buffer hcel-buffer)
                 (and (y-or-n-p "Open module source?")
                      (hcel-load-module-source
                       package-id module-path))))
       (with-current-buffer hcel-buffer
-        (when-let* ((id (alist-get
-                         'externalId
-                         (alist-get (intern identifier) hcel-identifiers)))
-                    (buffer-name (hcel-refs-format-id id)))
+        (when-let* ((external-id
+                     (alist-get
+                      'externalId
+                      (alist-get (intern internal-id) hcel-identifiers)))
+                    (buffer-name (hcel-refs-format-id external-id)))
           (with-current-buffer (get-buffer-create buffer-name)
             (hcel-refs-mode)
-            (setq hcel-refs-id id)
+            (setq hcel-refs-id external-id)
             (hcel-refs-update-references-package))
           (switch-to-buffer-other-window buffer-name))))))
 ;; hcel-ids-mode
@@ -267,17 +269,18 @@ Start by choosing a package."
                     hcel-ids-query hcel-results-page-number
                     hcel-results-max-page-number))
     (mapc
-     (lambda (result)
+     (lambda (identifier)
        (insert "--\n")
-       (insert (hcel-ids-render-result result
-                                       'hcel-tag-span-button-load-source)))
+       (insert (hcel-ids-render-identifier
+                identifier
+                'hcel-tag-span-button-load-source)))
      (alist-get 'json results))
     (goto-char (point-min))))
 
-(defun hcel-ids-render-result (result button-action)
-  (let* ((location-info (alist-get 'locationInfo result))
+(defun hcel-ids-render-identifier (identifier button-action)
+  (let* ((location-info (alist-get 'locationInfo identifier))
          (doc (hcel-render-html
-               (or (alist-get 'doc result)
+               (or (alist-get 'doc identifier)
                    (alist-get 'documentation
                               (ignore-errors
                                 (hcel-definition-site-location-info
@@ -286,8 +289,8 @@ Start by choosing a package."
     (concat
      (propertize
       (format "%s :: %s\n"
-              (alist-get 'demangledOccName result)
-              (hcel-render-id-type (alist-get 'idType result)))
+              (alist-get 'occName identifier)
+              (hcel-render-id-type (alist-get 'idType identifier)))
       'location-info location-info
       'match-line t)
      (concat "Defined in "
@@ -336,14 +339,14 @@ Start by choosing a package."
   (let ((results
          (mapcar
           (lambda (item)
-            (let* ((info (get-text-property 0 'info item))
-                   (location-info (alist-get 'locationInfo info))
+            (let* ((identifier (get-text-property 0 'identifier item))
+                   (location-info (alist-get 'locationInfo identifier))
                    (suffix
                     (propertize 
                      (format
                       " :: %s"
                       (hcel-render-components
-                       (alist-get 'components (alist-get 'idType info))
+                       (alist-get 'components (alist-get 'idType identifier))
                        nil
                        hcel-ids-minibuffer-component-max-len))
                      'face 'completions-annotations))
@@ -378,15 +381,12 @@ Start by choosing a package."
         (setq hcel-ids--minibuffer-saved-query query
               hcel-ids--minibuffer-saved-results
               (mapcar
-               (lambda (result)
+               (lambda (identifier)
                  (propertize
                   (format "%s %s"
-                          (alist-get 'demangledOccName result)
-                          (alist-get 'externalId result))
-                  'info result
-                  'location-info (alist-get 'locationInfo result)
-                  'components (alist-get 'components
-                                         (alist-get 'idType result))))
+                          (alist-get 'demangledOccName identifier)
+                          (alist-get 'externalId identifier))
+                  'identifier identifier))
                (hcel-api-identifiers
                 scope query package-id nil
                 (number-to-string hcel-ids-live-per-page))))
@@ -405,7 +405,8 @@ Start by choosing a package."
     (if (length= splitted 2)
         (hcel-load-module-location-info
          (alist-get 'locationInfo
-                    (get-text-property 0 'info hcel-ids--minibuffer-selected)))
+                    (get-text-property 0 'identifier
+                                       hcel-ids--minibuffer-selected)))
       (let ((buffer-name (hcel-ids-buffer-name scope query)))
         (with-current-buffer (get-buffer-create buffer-name)
           (hcel-ids-mode)
@@ -435,15 +436,20 @@ Start by choosing a package."
   (hcel-ids 'package query hcel-package-id))
 (define-key hcel-mode-map "i" #'hcel-package-ids)
 
-;; TODO: it is impossible with the current API to follow link within the help
-;; buffer, as definitionSite does not contain signature, and ExactLocation does
-;; not contain component name or even name
-(defun hcel-help-internal (info)
-  (help-setup-xref (list #'hcel-help-internal info)
+(defun hcel-tag-span-button-help (marker)
+  (hcel-help-internal
+   (hcel-global-identifier
+    (get-text-property marker 'location-info)
+    (hcel-string-with-text-property-at-point 'location-info))))
+
+(defun hcel-help-internal (identifier)
+  (help-setup-xref (list #'hcel-help-internal identifier)
                    (called-interactively-p 'interactive))
   (with-help-window (help-buffer)
-      (with-current-buffer standard-output
-        (insert (hcel-ids-render-result info 'hcel-tag-span-button-load-source)))))
+    (with-current-buffer standard-output
+      (insert
+       (hcel-ids-render-identifier
+        identifier 'hcel-tag-span-button-help)))))
 
 (defun hcel-help (query)
   (interactive
@@ -453,7 +459,7 @@ Start by choosing a package."
                        #'hcel-global-ids-minibuffer-collection))))
   (when (length= (split-string query " ") 2)
     (hcel-help-internal
-     (get-text-property 0 'info hcel-ids--minibuffer-selected))))
+     (get-text-property 0 'identifier hcel-ids--minibuffer-selected))))
 
 (provide 'hcel-results)
 ;;; hcel-results.el ends here.

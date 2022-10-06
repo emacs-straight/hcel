@@ -1,9 +1,9 @@
-;;; hcel.el --- Haskell codebase explorer -*- lexical-binding: t; -*-
+;;; hcel.el --- Haskell codebase explorer / cross referencer -*- lexical-binding: t; -*-
 
 ;; Author: Yuchen Pei <id@ypei.org>
 ;; Maintainer: Yuchen Pei <id@ypei.org>
 ;; Created: 2022
-;; Version: 0
+;; Version: 1.0.0
 ;; Keywords: haskell
 ;; Package-Requires: ((emacs "28"))
 ;; Package-Type: multi

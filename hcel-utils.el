@@ -191,5 +191,15 @@ Example of an idSrcSpan:
   (or (get-text-property (point) prop)
       (get-text-property (max (point-min) (1- (point))) prop)))
 
+(defun hcel-string-with-text-property-at-point (prop)
+  "Find the string with property PROP at point.
+
+Does not check whether point does indeed has property PROP."
+  (save-excursion
+    (let ((beg) (end))
+      (setq end (next-single-char-property-change (point) prop))
+      (setq beg (previous-single-char-property-change end prop))
+      (buffer-substring-no-properties beg end))))
+
 (provide 'hcel-utils)
 ;;; hcel-utils.el ends here.
