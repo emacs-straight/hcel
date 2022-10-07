@@ -18,6 +18,12 @@ Haskell code browsing and exploring.  Features include:
 
 * Install
 
+** GNU ELPA
+
+hc.el is available as [[https://elpa.gnu.org/packages/hcel.html][hcel on GNU ELPA]].
+
+** Manual install
+
 Clone this repo, and add to load path (assuming you clone to
 ~~/.emacs.d~):
 
