@@ -48,7 +48,7 @@
                    (string> higher-bound hcel-server-version)
                    (equal higher-bound hcel-server-version)))
     (error
-     "Server version cannot be satisfied.  Actual version: %s.  Required version: lower bound - %s, higher bound - %s"
+     "Server version cannot be satisfied.  Actual version: %s.  Required version: lower bound - %s, higher bound - %s.  Consider running M-x hcel-fetch-server-version to refresh the server version."
      hcel-server-version lower-bound higher-bound)))
 
 (defun hcel-api-packages ()
